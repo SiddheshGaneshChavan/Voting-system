@@ -27,7 +27,7 @@ const Footer = () => (
             target="_blank"
             rel="noopener noreferrer"
           >
-            Bibek Aryal
+            Siddhesh Ganesh Chavan
           </a>
           .
         </p>

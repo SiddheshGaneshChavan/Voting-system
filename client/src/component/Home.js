@@ -38,62 +38,52 @@ export default class Home extends Component {
       window.location = window.location + "#loaded";
       window.location.reload();
     }
+  
     try {
-      // Get network provider and web3 instance.
       const web3 = await getWeb3();
-
-      // Use web3 to get the user's accounts.
       const accounts = await web3.eth.getAccounts();
-
-      // Get the contract instance.
       const networkId = await web3.eth.net.getId();
       const deployedNetwork = Election.networks[networkId];
-      const instance = new web3.eth.Contract(
-        Election.abi,
-        deployedNetwork && deployedNetwork.address
-      );
-
-      // Set web3, accounts, and contract to the state, and then proceed with an
-      // example of interacting with the contract's methods.
-      this.setState({
-        web3: web3,
-        ElectionInstance: instance,
-        account: accounts[0],
-      });
-
-      const admin = await this.state.ElectionInstance.methods.getAdmin().call();
-      if (this.state.account === admin) {
-        this.setState({ isAdmin: true });
+  
+      if (!deployedNetwork) {
+        throw new Error("Smart contract not deployed to detected network.");
       }
-
-      // Get election start and end values
-      const start = await this.state.ElectionInstance.methods.getStart().call();
-      this.setState({ elStarted: start });
-      const end = await this.state.ElectionInstance.methods.getEnd().call();
-      this.setState({ elEnded: end });
-
-      // Getting election details from the contract
-      const electionDetails = await this.state.ElectionInstance.methods
-      .getElectionDetails()
-      .call();
-      
-      this.setState({
-        elDetails: {
-          adminName: electionDetails.adminName,
-          adminEmail: electionDetails.adminEmail,
-          adminTitle: electionDetails.adminTitle,
-          electionTitle: electionDetails.electionTitle,
-          organizationTitle: electionDetails.organizationTitle,
-        },
+  
+      const instance = new web3.eth.Contract(Election.abi, deployedNetwork.address);
+  
+      // Update state before accessing contract methods
+      this.setState({ web3, ElectionInstance: instance, account: accounts[0] }, async () => {
+        try {
+          const admin = await instance.methods.getAdmin().call();
+          if (this.state.account === admin) {
+            this.setState({ isAdmin: true });
+          }
+  
+          const start = await instance.methods.getStart().call();
+          const end = await instance.methods.getEnd().call();
+          const electionDetails = await instance.methods.getElectionDetails().call();
+  
+          this.setState({
+            elStarted: start,
+            elEnded: end,
+            elDetails: {
+              adminName: electionDetails.adminName,
+              adminEmail: electionDetails.adminEmail,
+              adminTitle: electionDetails.adminTitle,
+              electionTitle: electionDetails.electionTitle,
+              organizationTitle: electionDetails.organizationTitle,
+            },
+          });
+        } catch (error) {
+          console.error("Error fetching contract data:", error);
+        }
       });
     } catch (error) {
-      // Catch any errors for any of the above operations.
-      alert(
-        `Failed to load web3, accounts, or contract. Check console for details.`
-      );
+      alert("Failed to load web3, accounts, or contract.");
       console.error(error);
     }
   };
+  
   // end election
   endElection = async () => {
     await this.state.ElectionInstance.methods

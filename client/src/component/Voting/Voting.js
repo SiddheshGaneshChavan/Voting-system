@@ -37,87 +37,76 @@ export default class Voting extends Component {
     };
   }
   componentDidMount = async () => {
-    // refreshing once
-    if (!window.location.hash) {
-      window.location = window.location + "#loaded";
-      window.location.reload();
-    }
     try {
-      // Get network provider and web3 instance.
+      // Prevent infinite reload loop
+      if (!window.location.hash.includes("loaded")) {
+        window.location.hash = "loaded";
+        window.location.reload();
+        return;
+      }
+  
+      // Get Web3 instance and accounts
       const web3 = await getWeb3();
-
-      // Use web3 to get the user's accounts.
       const accounts = await web3.eth.getAccounts();
-
-      // Get the contract instance.
       const networkId = await web3.eth.net.getId();
       const deployedNetwork = Election.networks[networkId];
-      const instance = new web3.eth.Contract(
-        Election.abi,
-        deployedNetwork && deployedNetwork.address
-      );
-
-      // Set web3, accounts, and contract to the state, and then proceed with an
-      // example of interacting with the contract's methods.
-      this.setState({
-        web3: web3,
-        ElectionInstance: instance,
-        account: accounts[0],
-      });
-
-      // Get total number of candidates
-      const candidateCount = await this.state.ElectionInstance.methods
-        .getTotalCandidate()
-        .call();
-      this.setState({ candidateCount: candidateCount });
-
-      // Get start and end values
-      const start = await this.state.ElectionInstance.methods.getStart().call();
-      this.setState({ isElStarted: start });
-      const end = await this.state.ElectionInstance.methods.getEnd().call();
-      this.setState({ isElEnded: end });
-
-      // Loading Candidates details
-      for (let i = 1; i <= this.state.candidateCount; i++) {
-        const candidate = await this.state.ElectionInstance.methods
-          .candidateDetails(i - 1)
-          .call();
-        this.state.candidates.push({
-          id: candidate.candidateId,
-          header: candidate.header,
-          slogan: candidate.slogan,
-        });
+  
+      if (!deployedNetwork) {
+        throw new Error("Smart contract not deployed to the detected network.");
       }
-      this.setState({ candidates: this.state.candidates });
-
-      // Loading current voter
-      const voter = await this.state.ElectionInstance.methods
-        .voterDetails(this.state.account)
-        .call();
-      this.setState({
-        currentVoter: {
-          address: voter.voterAddress,
-          name: voter.name,
-          phone: voter.phone,
-          hasVoted: voter.hasVoted,
-          isVerified: voter.isVerified,
-          isRegistered: voter.isRegistered,
-        },
+  
+      const instance = new web3.eth.Contract(Election.abi, deployedNetwork.address);
+  
+      // Set web3, accounts, and contract instance before making contract calls
+      this.setState({ web3, ElectionInstance: instance, account: accounts[0] }, async () => {
+        try {
+          // Get total number of candidates
+          const candidateCount = await instance.methods.getTotalCandidate().call();
+          this.setState({ candidateCount });
+  
+          // Get election start & end status
+          const start = await instance.methods.getStart().call();
+          const end = await instance.methods.getEnd().call();
+          this.setState({ isElStarted: start, isElEnded: end });
+  
+          // Load candidates
+          const candidates = [];
+          for (let i = 0; i < candidateCount; i++) {
+            const candidate = await instance.methods.candidateDetails(i).call();
+            candidates.push({
+              id: candidate.candidateId,
+              header: candidate.header,
+              slogan: candidate.slogan,
+            });
+          }
+          this.setState({ candidates });
+  
+          // Load current voter
+          const voter = await instance.methods.voterDetails(this.state.account).call();
+          this.setState({
+            currentVoter: {
+              address: voter.voterAddress,
+              name: voter.name,
+              phone: voter.phone,
+              hasVoted: voter.hasVoted,
+              isVerified: voter.isVerified,
+              isRegistered: voter.isRegistered,
+            },
+          });
+  
+          // Admin account verification
+          const admin = await instance.methods.getAdmin().call();
+          this.setState({ isAdmin: this.state.account === admin });
+        } catch (contractError) {
+          console.error("Error interacting with smart contract:", contractError);
+        }
       });
-
-      // Admin account and verification
-      const admin = await this.state.ElectionInstance.methods.getAdmin().call();
-      if (this.state.account === admin) {
-        this.setState({ isAdmin: true });
-      }
     } catch (error) {
-      // Catch any errors for any of the above operations.
-      alert(
-        `Failed to load web3, accounts, or contract. Check console for details.`
-      );
-      console.error(error);
+      console.error("Failed to load web3, accounts, or contract:", error);
+      alert("Failed to load web3, accounts, or contract. Check console for details.");
     }
   };
+  
 
   renderCandidates = (candidate) => {
     const castVote = async (id) => {

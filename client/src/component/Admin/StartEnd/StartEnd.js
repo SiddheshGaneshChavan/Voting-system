@@ -24,53 +24,47 @@ export default class StartEnd extends Component {
   }
 
   componentDidMount = async () => {
-    // refreshing page only once
-    if (!window.location.hash) {
-      window.location = window.location + "#loaded";
-      window.location.reload();
-    }
-
     try {
+      // Refreshing page only once without infinite reload loop
+      if (!window.location.hash.includes("loaded")) {
+        window.location.hash = "loaded";
+        window.location.reload();
+        return;
+      }
+  
       // Get network provider and web3 instance.
       const web3 = await getWeb3();
-
-      // Use web3 to get the user's accounts.
       const accounts = await web3.eth.getAccounts();
-
-      // Get the contract instance.
       const networkId = await web3.eth.net.getId();
       const deployedNetwork = Election.networks[networkId];
-      const instance = new web3.eth.Contract(
-        Election.abi,
-        deployedNetwork && deployedNetwork.address
-      );
-      // Set web3, accounts, and contract to the state, and then proceed with an
-      // example of interacting with the contract's methods.
-      this.setState({
-        web3: web3,
-        ElectionInstance: instance,
-        account: accounts[0],
-      });
-
-      // Admin info
-      const admin = await this.state.ElectionInstance.methods.getAdmin().call();
-      if (this.state.account === admin) {
-        this.setState({ isAdmin: true });
+  
+      if (!deployedNetwork) {
+        throw new Error("Smart contract not deployed to the detected network.");
       }
-
-      // Get election start and end values
-      const start = await this.state.ElectionInstance.methods.getStart().call();
-      this.setState({ elStarted: start });
-      const end = await this.state.ElectionInstance.methods.getEnd().call();
-      this.setState({ elEnded: end });
+  
+      const instance = new web3.eth.Contract(Election.abi, deployedNetwork.address);
+  
+      // Update state first before making contract calls
+      this.setState({ web3, ElectionInstance: instance, account: accounts[0] }, async () => {
+        try {
+          // Ensure ElectionInstance is available before calling contract methods
+          const admin = await instance.methods.getAdmin().call();
+          this.setState({ isAdmin: this.state.account === admin });
+  
+          // Get election start and end values
+          const start = await instance.methods.getStart().call();
+          const end = await instance.methods.getEnd().call();
+          this.setState({ elStarted: start, elEnded: end });
+        } catch (contractError) {
+          console.error("Error interacting with smart contract:", contractError);
+        }
+      });
     } catch (error) {
-      // Catch any errors for any of the above operations.
-      alert(
-        `Failed to load web3, accounts, or contract. Check console for details.`
-      );
-      console.error(error);
+      console.error("Failed to load web3, accounts, or contract:", error);
+      alert("Failed to load web3, accounts, or contract. Check console for details.");
     }
   };
+  
 
   startElection = async () => {
     await this.state.ElectionInstance.methods

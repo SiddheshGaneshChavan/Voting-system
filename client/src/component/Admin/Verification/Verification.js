@@ -23,73 +23,69 @@ export default class Registration extends Component {
     };
   }
 
-  // refreshing once
   componentDidMount = async () => {
-    if (!window.location.hash) {
-      window.location = window.location + "#loaded";
-      window.location.reload();
-    }
     try {
-      // Get network provider and web3 instance.
+      // Prevent infinite reload loops
+      if (!window.location.hash.includes("loaded")) {
+        window.location.hash = "loaded";
+        window.location.reload();
+        return;
+      }
+  
+      // Get network provider and web3 instance
       const web3 = await getWeb3();
-
-      // Use web3 to get the user's accounts.
       const accounts = await web3.eth.getAccounts();
-
-      // Get the contract instance.
       const networkId = await web3.eth.net.getId();
       const deployedNetwork = Election.networks[networkId];
-      const instance = new web3.eth.Contract(
-        Election.abi,
-        deployedNetwork && deployedNetwork.address
-      );
-
-      // Set web3, accounts, and contract to the state, and then proceed with an
-      // example of interacting with the contract's methods.
-      this.setState({ web3, ElectionInstance: instance, account: accounts[0] });
-
-      // Total number of candidates
-      const candidateCount = await this.state.ElectionInstance.methods
-        .getTotalCandidate()
-        .call();
-      this.setState({ candidateCount: candidateCount });
-
-      // Admin account and verification
-      const admin = await this.state.ElectionInstance.methods.getAdmin().call();
-      if (this.state.account === admin) {
-        this.setState({ isAdmin: true });
+  
+      if (!deployedNetwork) {
+        throw new Error("Smart contract not deployed to the detected network.");
       }
-      // Total number of voters
-      const voterCount = await this.state.ElectionInstance.methods
-        .getTotalVoter()
-        .call();
-      this.setState({ voterCount: voterCount });
-      // Loading all the voters
-      for (let i = 0; i < this.state.voterCount; i++) {
-        const voterAddress = await this.state.ElectionInstance.methods
-          .voters(i)
-          .call();
-        const voter = await this.state.ElectionInstance.methods
-          .voterDetails(voterAddress)
-          .call();
-        this.state.voters.push({
-          address: voter.voterAddress,
-          name: voter.name,
-          phone: voter.phone,
-          hasVoted: voter.hasVoted,
-          isVerified: voter.isVerified,
-          isRegistered: voter.isRegistered,
-        });
-      }
-      this.setState({ voters: this.state.voters });
+  
+      const instance = new web3.eth.Contract(Election.abi, deployedNetwork.address);
+  
+      // Set web3, accounts, and contract first
+      this.setState({ web3, ElectionInstance: instance, account: accounts[0] }, async () => {
+        try {
+          // Fetch total number of candidates
+          const candidateCount = await instance.methods.getTotalCandidate().call();
+          this.setState({ candidateCount });
+  
+          // Fetch admin details
+          const admin = await instance.methods.getAdmin().call();
+          this.setState({ isAdmin: this.state.account === admin });
+  
+          // Fetch total number of voters
+          const voterCount = await instance.methods.getTotalVoter().call();
+          this.setState({ voterCount });
+  
+          // Load all voters
+          const voters = [];
+          for (let i = 0; i < voterCount; i++) {
+            const voterAddress = await instance.methods.voters(i).call();
+            const voter = await instance.methods.voterDetails(voterAddress).call();
+            voters.push({
+              address: voter.voterAddress,
+              name: voter.name,
+              phone: voter.phone,
+              hasVoted: voter.hasVoted,
+              isVerified: voter.isVerified,
+              isRegistered: voter.isRegistered,
+            });
+          }
+  
+          // Update state properly
+          this.setState({ voters });
+        } catch (contractError) {
+          console.error("Error interacting with smart contract:", contractError);
+        }
+      });
     } catch (error) {
-      // Catch any errors for any of the above operations.
-      alert(
-        `Failed to load web3, accounts, or contract. Check console for details.`
-      );
-      console.error(error);
+      console.error("Failed to load web3, accounts, or contract:", error);
+      alert("Failed to load web3, accounts, or contract. Check console for details.");
     }
   };
+  
   renderUnverifiedVoters = (voter) => {
     const verifyVoter = async (verifiedStatus, address) => {
       await this.state.ElectionInstance.methods
