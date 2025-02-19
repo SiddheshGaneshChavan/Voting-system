@@ -1,5 +1,5 @@
-truffle compile
-truffle migrate
+\ntruffle compile
+\ntruffle migrate
 cd Client
 npm install
 npm start
